@@ -91,7 +91,7 @@ languages = {
     "Arabic": "ar",
 }
 
-models = ["Google"]  # Add more models here as needed
+models = ["Google", "DeepL"]  # Add more models here as needed
 
 language = st.selectbox("Select target language", list(languages.keys()))
 model = st.selectbox("Select translation model", models)
