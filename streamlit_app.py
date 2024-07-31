@@ -17,7 +17,7 @@ translate_client = translate.Client(credentials=credentials)
 
 
 def translate_text(text, target_language, model="Google"):
-    if model == "Google":
+    if model == "Google" or model == "DeepL":
         result = translate_client.translate(
             text, target_language=target_language
         )
