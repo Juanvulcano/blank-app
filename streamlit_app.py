@@ -1,3 +1,4 @@
+import zipfile
 from io import BytesIO
 
 import docx
@@ -28,48 +29,70 @@ def translate_text(text, target_language, model="Google"):
 # Function to handle file upload and translation
 
 
-def handle_file_upload(file, target_language, model="Google"):
-    if file.type == "text/plain":
-        content = file.read().decode("utf-8")
-        translated_content = translate_text(content, target_language, model)
-        return translated_content
-    elif file.type == "text/csv":
-        df = pd.read_csv(file)
-        translated_df = df.applymap(
-            lambda x: translate_text(x, target_language, model)
-        )
-        return translated_df.to_csv(index=False)
-    elif file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-        df = pd.read_excel(file)
-        translated_df = df.applymap(
-            lambda x: translate_text(x, target_language, model)
-        )
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            translated_df.to_excel(writer, index=False, sheet_name="Sheet1")
-            writer.save()
-        processed_data = output.getvalue()
-        return processed_data
-    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        doc = docx.Document(file)
+def handle_file_upload(file, target_languages, model="Google"):
+    translations = {}
 
-        # Translate paragraphs
-        for para in doc.paragraphs:
-            para.text = translate_text(para.text, target_language, model)
+    for language in target_languages:
+        if file.type == "text/plain":
+            content = file.read().decode("utf-8")
+            translated_content = translate_text(
+                content, languages[language], model)
+            translations[language] = translated_content.encode('utf-8')
+        elif file.type == "text/csv":
+            df = pd.read_csv(file)
+            translated_df = df.applymap(
+                lambda x: translate_text(x, languages[language], model)
+            )
+            translations[language] = translated_df.to_csv(
+                index=False).encode('utf-8')
+        elif file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+            df = pd.read_excel(file)
+            translated_df = df.applymap(
+                lambda x: translate_text(x, languages[language], model)
+            )
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                translated_df.to_excel(
+                    writer, index=False, sheet_name="Sheet1")
+                writer.save()
+            translations[language] = output.getvalue()
+        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(file)
 
-        # Translate tables
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    cell.text = translate_text(
-                        cell.text, target_language, model)
+            # Translate paragraphs
+            for para in doc.paragraphs:
+                para.text = translate_text(
+                    para.text, languages[language], model)
 
-        output = BytesIO()
-        doc.save(output)
-        processed_data = output.getvalue()
-        return processed_data
-    else:
-        return "Unsupported file type."
+            # Translate tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        cell.text = translate_text(
+                            cell.text, languages[language], model)
+
+            output = BytesIO()
+            doc.save(output)
+            translations[language] = output.getvalue()
+        else:
+            translations[language] = "Unsupported file type.".encode('utf-8')
+
+        # Reset file pointer to the beginning for the next translation
+        file.seek(0)
+
+    return translations
+
+# Function to create a ZIP file
+
+
+def create_zip(translations, original_filename):
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zip_file:
+        for language, content in translations.items():
+            filename = f"{language}_{original_filename}"
+            zip_file.writestr(filename, content)
+    zip_buffer.seek(0)
+    return zip_buffer
 
 
 # Streamlit app UI
@@ -93,20 +116,22 @@ languages = {
 
 models = ["Google", "DeepL"]  # Add more models here as needed
 
-language = st.selectbox("Select target language", list(languages.keys()))
+selected_languages = st.multiselect(
+    "Select target languages", list(languages.keys()))
 model = st.selectbox("Select translation model", models)
 
 if st.button("Translate"):
     if uploaded_file is not None:
-        target_language = languages[language]
-        translation = handle_file_upload(uploaded_file, target_language, model)
-        if isinstance(translation, str):
-            st.text_area("Translated Text", translation, height=300)
-        else:
+        translations = handle_file_upload(
+            uploaded_file, selected_languages, model)
+
+        if translations:
+            zip_file = create_zip(translations, uploaded_file.name)
             st.download_button(
-                label="Download Translated File",
-                data=translation,
-                file_name=f"translated_{uploaded_file.name}",
+                label="Download Translated Documents",
+                data=zip_file,
+                file_name="translated_documents.zip",
+                mime="application/zip"
             )
     else:
         st.error("Please upload a file first.")
