@@ -101,15 +101,24 @@ st.title("Document Translator")
 uploaded_file = st.file_uploader(
     "Upload a document", type=["txt", "csv", "xlsx", "docx"]
 )
+
 languages = {
-    "English": "en",
-    "Spanish": "es",
+    "English (US)": "en",
+    "English (UK)": "en-GB",
+    "English (AU)": "en-AU",
+    "Spanish (ES)": "es",
+    "Spanish (MX)": "es-MX",
     "French": "fr",
-    "German": "de",
-    "Chinese (Simplified)": "zh-CN",
+    "German (DE)": "de",
     "Japanese": "ja",
+    "Portuguese (BR)": "pt-BR",
+    "Portuguese (PT)": "pt-PT",
+    "Italian": "it",
+    "Turkish": "tr",
+    "Polish": "pl",
+    "Dutch (NL)": "nl",
+    "Chinese (Simplified)": "zh-CN",
     "Korean": "ko",
-    "Portuguese": "pt",
     "Russian": "ru",
     "Arabic": "ar",
 }
