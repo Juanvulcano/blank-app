@@ -14,41 +14,66 @@ credentials = service_account.Credentials.from_service_account_info(
 )
 translate_client = translate.Client(credentials=credentials)
 
-# Function to translate text
+# Function to translate text with exclusions
 
 
-def translate_text(text, target_language, model="Google"):
-    if model == "Google" or model == "DeepL":
+def translate_text(text, target_language, model="Google", exclude_words=None):
+    if exclude_words:
+        # Sort the words by length to avoid partial replacements
+        exclude_words = sorted(exclude_words, key=len, reverse=True)
+        word_positions = {}
+
+        # Find and mark the positions of excluded words
+        for word in exclude_words:
+            word = word.strip()
+            if word in text:
+                start_index = text.find(word)
+                end_index = start_index + len(word)
+                word_positions[word] = (start_index, end_index)
+                text = text.replace(word, f"<EXCLUDE_{word}>")  # Mark the word
+
+    # Translate the text
+    if model == "Google":
         result = translate_client.translate(
             text, target_language=target_language
         )
-        return result["translatedText"]
+        translated_text = result["translatedText"]
     else:
-        return "Unsupported translation model."
+        translated_text = "Unsupported translation model."
+
+    # Replace markers with the original words
+    if exclude_words:
+        for word in word_positions:
+            translated_text = translated_text.replace(
+                f"<EXCLUDE_{word}>", word)
+
+    return translated_text
 
 # Function to handle file upload and translation
 
 
-def handle_file_upload(file, target_languages, model="Google"):
+def handle_file_upload(file, target_languages, model="Google", exclude_words=None):
     translations = {}
 
     for language in target_languages:
         if file.type == "text/plain":
             content = file.read().decode("utf-8")
             translated_content = translate_text(
-                content, languages[language], model)
+                content, languages[language], model, exclude_words)
             translations[language] = translated_content.encode('utf-8')
         elif file.type == "text/csv":
             df = pd.read_csv(file)
             translated_df = df.applymap(
-                lambda x: translate_text(x, languages[language], model)
+                lambda x: translate_text(
+                    x, languages[language], model, exclude_words)
             )
             translations[language] = translated_df.to_csv(
                 index=False).encode('utf-8')
         elif file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
             df = pd.read_excel(file)
             translated_df = df.applymap(
-                lambda x: translate_text(x, languages[language], model)
+                lambda x: translate_text(
+                    x, languages[language], model, exclude_words)
             )
             output = BytesIO()
             with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
@@ -62,14 +87,14 @@ def handle_file_upload(file, target_languages, model="Google"):
             # Translate paragraphs
             for para in doc.paragraphs:
                 para.text = translate_text(
-                    para.text, languages[language], model)
+                    para.text, languages[language], model, exclude_words)
 
             # Translate tables
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
                         cell.text = translate_text(
-                            cell.text, languages[language], model)
+                            cell.text, languages[language], model, exclude_words)
 
             output = BytesIO()
             doc.save(output)
@@ -129,10 +154,16 @@ selected_languages = st.multiselect(
     "Select target languages", list(languages.keys()))
 model = st.selectbox("Select translation model", models)
 
+exclude_words_input = st.text_area(
+    "Enter words/phrases to exclude from translation (comma-separated):",
+    value="Apple Watch, apple watch")
+
 if st.button("Translate"):
     if uploaded_file is not None:
+        exclude_words = [word.strip() for word in exclude_words_input.split(
+            ',')] if exclude_words_input else None
         translations = handle_file_upload(
-            uploaded_file, selected_languages, model)
+            uploaded_file, selected_languages, model, exclude_words)
 
         if translations:
             zip_file = create_zip(translations, uploaded_file.name)
